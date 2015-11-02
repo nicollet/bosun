@@ -1,85 +1,19 @@
 package sched
 
 import (
-	"crypto/sha1"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 
 	"bosun.org/cmd/bosun/expr"
+	"bosun.org/models"
 	"bosun.org/opentsdb"
 )
 
-type Silence struct {
-	Start, End time.Time
-	Alert      string
-	Tags       opentsdb.TagSet
-	Forget     bool
-	User       string
-	Message    string
-}
-
-func (s *Silence) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Start, End time.Time
-		Alert      string
-		Tags       string
-		Forget     bool
-		User       string
-		Message    string
-	}{
-		Start:   s.Start,
-		End:     s.End,
-		Alert:   s.Alert,
-		Tags:    s.Tags.Tags(),
-		Forget:  s.Forget,
-		User:    s.User,
-		Message: s.Message,
-	})
-}
-
-func (s *Silence) Silenced(now time.Time, alert string, tags opentsdb.TagSet) bool {
-	if !s.ActiveAt(now) {
-		return false
-	}
-	return s.Matches(alert, tags)
-}
-
-func (s *Silence) ActiveAt(now time.Time) bool {
-	if now.Before(s.Start) || now.After(s.End) {
-		return false
-	}
-	return true
-}
-
-func (s *Silence) Matches(alert string, tags opentsdb.TagSet) bool {
-	if s.Alert != "" && s.Alert != alert {
-		return false
-	}
-	for k, pattern := range s.Tags {
-		tagv, ok := tags[k]
-		if !ok {
-			return false
-		}
-		matched, _ := Match(pattern, tagv)
-		if !matched {
-			return false
-		}
-	}
-	return true
-}
-
-func (s Silence) ID() string {
-	h := sha1.New()
-	fmt.Fprintf(h, "%s|%s|%s%s", s.Start, s.End, s.Alert, s.Tags)
-	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
 // Silenced returns all currently silenced AlertKeys and the time they will be
 // unsilenced.
-func (s *Schedule) Silenced() map[expr.AlertKey]Silence {
-	aks := make(map[expr.AlertKey]Silence)
+func (s *Schedule) Silenced() map[expr.AlertKey]models.Silence {
+	aks := make(map[expr.AlertKey]models.Silence)
 	now := time.Now()
 	silenceLock.RLock()
 	defer silenceLock.RUnlock()
@@ -115,7 +49,7 @@ func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forge
 	if alert == "" && tagList == "" {
 		return nil, fmt.Errorf("must specify either alert or tags")
 	}
-	si := &Silence{
+	si := &models.Silence{
 		Start:   start,
 		End:     end,
 		Alert:   alert,

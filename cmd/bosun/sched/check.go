@@ -13,6 +13,7 @@ import (
 	"bosun.org/collect"
 	"bosun.org/graphite"
 	"bosun.org/metadata"
+	"bosun.org/models"
 	"bosun.org/opentsdb"
 	"bosun.org/slog"
 )
@@ -122,7 +123,7 @@ func (s *Schedule) RunHistory(r *RunHistory) {
 }
 
 // RunHistory for a single alert key. Returns true if notifications were altered.
-func (s *Schedule) runHistory(r *RunHistory, ak expr.AlertKey, event *Event, silenced map[expr.AlertKey]Silence) bool {
+func (s *Schedule) runHistory(r *RunHistory, ak expr.AlertKey, event *Event, silenced map[expr.AlertKey]models.Silence) bool {
 	checkNotify := false
 	// get existing state object for alert key. add to schedule status if doesn't already exist
 	state := s.GetStatus(ak)

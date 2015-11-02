@@ -10,6 +10,7 @@ import (
 
 	"bosun.org/cmd/bosun/conf"
 	"bosun.org/cmd/bosun/expr"
+	"bosun.org/models"
 	"bosun.org/slog"
 )
 
@@ -91,7 +92,7 @@ func (s *Schedule) CheckNotifications() time.Duration {
 	return timeout
 }
 
-func (s *Schedule) sendNotifications(silenced map[expr.AlertKey]Silence) {
+func (s *Schedule) sendNotifications(silenced map[expr.AlertKey]models.Silence) {
 	if s.Conf.Quiet {
 		slog.Infoln("quiet mode prevented", len(s.pendingNotifications), "notifications")
 		return
