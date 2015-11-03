@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"log"
 	"time"
 
 	"bosun.org/_third_party/github.com/garyburd/redigo/redis"
@@ -14,7 +15,7 @@ import (
 
 Silences : hash of Id - json of silence. Id is sha of fields
 
-SilencesByEnd : zlist of end-time to id. 
+SilencesByEnd : zlist of end-time to id.
 
 Easy to find active. Find all with end time in future, and filter to those with start time in the past.
 
@@ -42,24 +43,26 @@ func (d *dataAccess) GetActiveSilences() ([]*models.Silence, error) {
 	conn := d.GetConnection()
 	defer conn.Close()
 
-	vals, err := redis.Strings(conn.Do("ZRANGEBYSCORE", silenceIdx, time.Now().UTC().Unix(), "+inf"))
+	now := time.Now().UTC()
+	vals, err := redis.Strings(conn.Do("ZRANGEBYSCORE", silenceIdx, now.Unix(), "+inf"))
 	if err != nil {
 		return nil, err
 	}
-
+	if len(vals) == 0 {
+		return nil, nil
+	}
 	silences, err := getSilences(vals, conn)
 	if err != nil {
 		return nil, err
 	}
-	s2 := make([]*models.Silence, 0, len(silences))
-	now := time.Now()
-	for _, s := range s2 {
+	filtered := make([]*models.Silence, 0, len(silences))
+	for _, s := range silences {
 		if s.Start.After(now) {
 			continue
 		}
-		s2 = append(s2, s)
+		filtered = append(filtered, s)
 	}
-	return s2, nil
+	return filtered, nil
 }
 
 func getSilences(ids []string, conn redis.Conn) ([]*models.Silence, error) {
@@ -70,10 +73,10 @@ func getSilences(ids []string, conn redis.Conn) ([]*models.Silence, error) {
 	}
 	jsons, err := redis.Strings(conn.Do("HMGET", args...))
 	if err != nil {
+		log.Fatal(err, args)
 		return nil, err
 	}
-
-	silences := make([]*models.Silence, len(jsons))
+	silences := make([]*models.Silence, 0, len(jsons))
 	for _, j := range jsons {
 		s := &models.Silence{}
 		if err := json.Unmarshal([]byte(j), s); err != nil {
@@ -89,7 +92,7 @@ func (d *dataAccess) AddSilence(s *models.Silence) error {
 	conn := d.GetConnection()
 	defer conn.Close()
 
-	if _, err := conn.Do("ZADD", silenceIdx, s.Start.UTC().Unix(), s.ID()); err != nil {
+	if _, err := conn.Do("ZADD", silenceIdx, s.End.UTC().Unix(), s.ID()); err != nil {
 		return err
 	}
 	dat, err := json.Marshal(s)
@@ -126,9 +129,9 @@ func (d *dataAccess) ListSilences(perPage, page int) (map[string]*models.Silence
 		perPage = 20
 	}
 	start := page * perPage
-	end := start + perPage
+	end := start + perPage - 1
 
-	ids, err := redis.Strings(conn.Do("ZRANGE", silenceIdx, start, end))
+	ids, err := redis.Strings(conn.Do("ZREVRANGE", silenceIdx, start, end))
 	if err != nil {
 		return nil, err
 	}

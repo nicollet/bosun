@@ -2,7 +2,6 @@ package models
 
 import (
 	"crypto/sha1"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -17,25 +16,6 @@ type Silence struct {
 	Forget     bool
 	User       string
 	Message    string
-}
-
-func (s *Silence) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Start, End time.Time
-		Alert      string
-		Tags       string
-		Forget     bool
-		User       string
-		Message    string
-	}{
-		Start:   s.Start,
-		End:     s.End,
-		Alert:   s.Alert,
-		Tags:    s.Tags.Tags(),
-		Forget:  s.Forget,
-		User:    s.User,
-		Message: s.Message,
-	})
 }
 
 func (s *Silence) Silenced(now time.Time, alert string, tags opentsdb.TagSet) bool {
