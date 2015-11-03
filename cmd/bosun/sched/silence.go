@@ -2,12 +2,12 @@ package sched
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"bosun.org/cmd/bosun/expr"
 	"bosun.org/models"
 	"bosun.org/opentsdb"
+	"bosun.org/slog"
 )
 
 // Silenced returns all currently silenced AlertKeys and the time they will be
@@ -15,9 +15,12 @@ import (
 func (s *Schedule) Silenced() map[expr.AlertKey]models.Silence {
 	aks := make(map[expr.AlertKey]models.Silence)
 	now := time.Now()
-	silenceLock.RLock()
-	defer silenceLock.RUnlock()
-	for _, si := range s.Silence {
+	silences, err := s.DataAccess.Silence().GetActiveSilences()
+	if err != nil {
+		slog.Error("Error fetching silences.", err)
+		return nil
+	}
+	for _, si := range silences {
 		if !si.ActiveAt(now) {
 			continue
 		}
@@ -33,8 +36,6 @@ func (s *Schedule) Silenced() map[expr.AlertKey]models.Silence {
 	}
 	return aks
 }
-
-var silenceLock = sync.RWMutex{}
 
 func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forget, confirm bool, edit, user, message string) (map[expr.AlertKey]bool, error) {
 	if start.IsZero() || end.IsZero() {
@@ -65,11 +66,13 @@ func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forge
 		}
 		si.Tags = tags
 	}
-	silenceLock.Lock()
-	defer silenceLock.Unlock()
 	if confirm {
-		delete(s.Silence, edit)
-		s.Silence[si.ID()] = si
+		if err := s.DataAccess.Silence().DeleteSilence(si.ID()); err != nil {
+			return nil, err
+		}
+		if err := s.DataAccess.Silence().AddSilence(si); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}
 	aks := make(map[expr.AlertKey]bool)
@@ -82,8 +85,5 @@ func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forge
 }
 
 func (s *Schedule) ClearSilence(id string) error {
-	silenceLock.Lock()
-	defer silenceLock.Unlock()
-	delete(s.Silence, id)
-	return nil
+	return s.DataAccess.Silence().DeleteSilence(id)
 }

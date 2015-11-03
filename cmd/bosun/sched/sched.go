@@ -37,10 +37,9 @@ type Schedule struct {
 	mutexAquired  time.Time
 	mutexWaitTime int64
 
-	Conf    *conf.Conf
-	status  States
-	Silence map[string]*models.Silence
-	Group   map[time.Time]expr.AlertKeys
+	Conf   *conf.Conf
+	status States
+	Group  map[time.Time]expr.AlertKeys
 
 	Incidents map[uint64]*Incident
 	Search    *search.Search
@@ -72,7 +71,6 @@ func (s *Schedule) Init(c *conf.Conf) error {
 	//be avoided.
 	var err error
 	s.Conf = c
-	s.Silence = make(map[string]*models.Silence)
 	s.Group = make(map[time.Time]expr.AlertKeys)
 	s.Incidents = make(map[uint64]*Incident)
 	s.pendingUnknowns = make(map[*conf.Notification][]*State)

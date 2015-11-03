@@ -44,7 +44,6 @@ const (
 	dbBucket           = "bindata"
 	dbConfigTextBucket = "configText"
 	dbNotifications    = "notifications"
-	dbSilence          = "silence"
 	dbStatus           = "status"
 	dbIncidents        = "incidents"
 	dbErrors           = "errors"
@@ -57,7 +56,6 @@ func (s *Schedule) save() {
 	s.Lock("Save")
 	store := map[string]interface{}{
 		dbNotifications: s.Notifications,
-		dbSilence:       s.Silence,
 		dbStatus:        s.status,
 		dbIncidents:     s.Incidents,
 	}
@@ -145,9 +143,10 @@ func (s *Schedule) RestoreState() error {
 	if err := decode(db, dbNotifications, &notifications); err != nil {
 		slog.Errorln(dbNotifications, err)
 	}
-	if err := decode(db, dbSilence, &s.Silence); err != nil {
-		slog.Errorln(dbSilence, err)
-	}
+	//TODO: migrate silence
+	//	if err := decode(db, dbSilence, &s.Silence); err != nil {
+	//		slog.Errorln(dbSilence, err)
+	//	}
 	if err := decode(db, dbIncidents, &s.Incidents); err != nil {
 		slog.Errorln(dbIncidents, err)
 	}
