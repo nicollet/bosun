@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"bosun.org/cmd/bosun/expr"
 	"bosun.org/models"
 	"bosun.org/opentsdb"
 	"bosun.org/slog"
@@ -12,8 +11,9 @@ import (
 
 // Silenced returns all currently silenced AlertKeys and the time they will be
 // unsilenced.
-func (s *Schedule) Silenced() map[expr.AlertKey]models.Silence {
-	aks := make(map[expr.AlertKey]models.Silence)
+func (s *Schedule) Silenced() map[models.AlertKey]models.Silence {
+	aks := make(map[models.AlertKey]models.Silence)
+
 	now := time.Now()
 	silences, err := s.DataAccess.Silence().GetActiveSilences()
 	if err != nil {
@@ -37,7 +37,7 @@ func (s *Schedule) Silenced() map[expr.AlertKey]models.Silence {
 	return aks
 }
 
-func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forget, confirm bool, edit, user, message string) (map[expr.AlertKey]bool, error) {
+func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forget, confirm bool, edit, user, message string) (map[models.AlertKey]bool, error) {
 	if start.IsZero() || end.IsZero() {
 		return nil, fmt.Errorf("both start and end must be specified")
 	}
@@ -75,7 +75,7 @@ func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forge
 		}
 		return nil, nil
 	}
-	aks := make(map[expr.AlertKey]bool)
+	aks := make(map[models.AlertKey]bool)
 	for ak := range s.status {
 		if si.Matches(ak.Name(), ak.Group()) {
 			aks[ak] = s.status[ak].IsActive()

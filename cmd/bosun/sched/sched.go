@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"sort"
 	"sync"
 	"time"
 
@@ -39,23 +38,20 @@ type Schedule struct {
 
 	Conf   *conf.Conf
 	status States
-	Group  map[time.Time]expr.AlertKeys
+	Group  map[time.Time]models.AlertKeys
 
-	Incidents map[uint64]*Incident
-	Search    *search.Search
+	Search *search.Search
 
 	//channel signals an alert has added notifications, and notifications should be processed.
 	nc chan interface{}
 	//notifications to be sent immediately
 	pendingNotifications map[*conf.Notification][]*State
 	//notifications we are currently tracking, potentially with future or repeated actions.
-	Notifications map[expr.AlertKey]map[string]time.Time
+	Notifications map[models.AlertKey]map[string]time.Time
 	//unknown states that need to be notified about. Collected and sent in batches.
 	pendingUnknowns map[*conf.Notification][]*State
 
-	maxIncidentId uint64
-	incidentLock  sync.Mutex
-	db            *bolt.DB
+	db *bolt.DB
 
 	LastCheck time.Time
 
@@ -71,8 +67,7 @@ func (s *Schedule) Init(c *conf.Conf) error {
 	//be avoided.
 	var err error
 	s.Conf = c
-	s.Group = make(map[time.Time]expr.AlertKeys)
-	s.Incidents = make(map[uint64]*Incident)
+	s.Group = make(map[time.Time]models.AlertKeys)
 	s.pendingUnknowns = make(map[*conf.Notification][]*State)
 	s.status = make(States)
 	s.LastCheck = time.Now()
@@ -217,25 +212,27 @@ func (s *Schedule) GetMetadata(metric string, subset opentsdb.TagSet) ([]metadat
 	return ms, nil
 }
 
-type States map[expr.AlertKey]*State
+type States map[models.AlertKey]*State
 
 type StateTuple struct {
-	NeedAck  bool
-	Active   bool
-	Status   Status
-	Silenced bool
+	NeedAck       bool
+	Active        bool
+	Status        Status
+	CurrentStatus Status
+	Silenced      bool
 }
 
 // GroupStates groups by NeedAck, Active, Status, and Silenced.
-func (states States) GroupStates(silenced map[expr.AlertKey]models.Silence) map[StateTuple]States {
+func (states States) GroupStates(silenced map[models.AlertKey]models.Silence) map[StateTuple]States {
 	r := make(map[StateTuple]States)
 	for ak, st := range states {
 		_, sil := silenced[ak]
 		t := StateTuple{
-			st.NeedAck,
-			st.IsActive(),
-			st.AbnormalStatus(),
-			sil,
+			NeedAck:       st.NeedAck,
+			Active:        st.IsActive(),
+			Status:        st.AbnormalStatus(),
+			CurrentStatus: st.Status(),
+			Silenced:      sil,
 		}
 		if _, present := r[t]; !present {
 			r[t] = make(States)
@@ -247,11 +244,11 @@ func (states States) GroupStates(silenced map[expr.AlertKey]models.Silence) map[
 
 // GroupSets returns slices of TagSets, grouped by most common ancestor. Those
 // with no shared ancestor are grouped by alert name.
-func (states States) GroupSets(minGroup int) map[string]expr.AlertKeys {
+func (states States) GroupSets(minGroup int) map[string]models.AlertKeys {
 	type Pair struct {
 		k, v string
 	}
-	groups := make(map[string]expr.AlertKeys)
+	groups := make(map[string]models.AlertKeys)
 	seen := make(map[*State]bool)
 	for {
 		counts := make(map[Pair]int)
@@ -277,7 +274,7 @@ func (states States) GroupSets(minGroup int) map[string]expr.AlertKeys {
 		if max < minGroup {
 			break
 		}
-		var group expr.AlertKeys
+		var group models.AlertKeys
 		for _, s := range states {
 			if seen[s] {
 				continue
@@ -293,7 +290,7 @@ func (states States) GroupSets(minGroup int) map[string]expr.AlertKeys {
 		}
 	}
 	// alerts
-	groupedByAlert := map[string]expr.AlertKeys{}
+	groupedByAlert := map[string]models.AlertKeys{}
 	for _, s := range states {
 		if seen[s] {
 			continue
@@ -302,7 +299,7 @@ func (states States) GroupSets(minGroup int) map[string]expr.AlertKeys {
 	}
 	for a, aks := range groupedByAlert {
 		if len(aks) >= minGroup {
-			group := expr.AlertKeys{}
+			group := models.AlertKeys{}
 			for _, ak := range aks {
 				group = append(group, ak)
 			}
@@ -314,7 +311,7 @@ func (states States) GroupSets(minGroup int) map[string]expr.AlertKeys {
 		if seen[s] || len(groupedByAlert[s.Alert]) >= minGroup {
 			continue
 		}
-		groups[string(s.AlertKey())] = expr.AlertKeys{s.AlertKey()}
+		groups[string(s.AlertKey())] = models.AlertKeys{s.AlertKey()}
 	}
 	return groups
 }
@@ -340,16 +337,17 @@ func (s *Schedule) GetOpenStates() States {
 }
 
 type StateGroup struct {
-	Active   bool `json:",omitempty"`
-	Status   Status
-	Silenced bool
-	IsError  bool          `json:",omitempty"`
-	Subject  string        `json:",omitempty"`
-	Alert    string        `json:",omitempty"`
-	AlertKey expr.AlertKey `json:",omitempty"`
-	Ago      string        `json:",omitempty"`
-	State    *State        `json:",omitempty"`
-	Children []*StateGroup `json:",omitempty"`
+	Active        bool `json:",omitempty"`
+	Status        Status
+	CurrentStatus Status
+	Silenced      bool
+	IsError       bool            `json:",omitempty"`
+	Subject       string          `json:",omitempty"`
+	Alert         string          `json:",omitempty"`
+	AlertKey      models.AlertKey `json:",omitempty"`
+	Ago           string          `json:",omitempty"`
+	State         *State          `json:",omitempty"`
+	Children      []*StateGroup   `json:",omitempty"`
 }
 
 type StateGroups struct {
@@ -362,7 +360,7 @@ type StateGroups struct {
 }
 
 func (s *Schedule) MarshalGroups(T miniprofiler.Timer, filter string) (*StateGroups, error) {
-	var silenced map[expr.AlertKey]models.Silence
+	var silenced map[models.AlertKey]models.Silence
 	T.Step("Silenced", func(miniprofiler.Timer) {
 		silenced = s.Silenced()
 	})
@@ -407,16 +405,17 @@ func (s *Schedule) MarshalGroups(T miniprofiler.Timer, filter string) (*StateGro
 			var grouped []*StateGroup
 			switch tuple.Status {
 			case StWarning, StCritical, StUnknown:
-				var sets map[string]expr.AlertKeys
+				var sets map[string]models.AlertKeys
 				T.Step(fmt.Sprintf("GroupSets (%d): %v", len(states), tuple), func(T miniprofiler.Timer) {
 					sets = states.GroupSets(s.Conf.MinGroupSize)
 				})
 				for name, group := range sets {
 					g := StateGroup{
-						Active:   tuple.Active,
-						Status:   tuple.Status,
-						Silenced: tuple.Silenced,
-						Subject:  fmt.Sprintf("%s - %s", tuple.Status, name),
+						Active:        tuple.Active,
+						Status:        tuple.Status,
+						CurrentStatus: tuple.CurrentStatus,
+						Silenced:      tuple.Silenced,
+						Subject:       fmt.Sprintf("%s - %s", tuple.Status, name),
 					}
 					for _, ak := range group {
 						st := s.status[ak].Copy()
@@ -631,8 +630,8 @@ func (s *State) Copy() *State {
 	return newState
 }
 
-func (s *State) AlertKey() expr.AlertKey {
-	return expr.NewAlertKey(s.Alert, s.Group)
+func (s *State) AlertKey() models.AlertKey {
+	return models.NewAlertKey(s.Alert, s.Group)
 }
 
 func (s *State) Status() Status {
@@ -672,7 +671,7 @@ func (s *State) Action(user, message string, t ActionType, timestamp time.Time) 
 	})
 }
 
-func (s *Schedule) Action(user, message string, t ActionType, ak expr.AlertKey) error {
+func (s *Schedule) Action(user, message string, t ActionType, ak models.AlertKey) error {
 	s.Lock("Action")
 	defer s.Unlock()
 	st := s.status[ak]
@@ -704,11 +703,15 @@ func (s *Schedule) Action(user, message string, t ActionType, ak expr.AlertKey) 
 		st.Open = false
 		last := st.Last()
 		if last.IncidentId != 0 {
-			s.incidentLock.Lock()
-			if incident, ok := s.Incidents[last.IncidentId]; ok {
-				incident.End = &timestamp
+			incident, err := s.DataAccess.Incidents().GetIncident(last.IncidentId)
+			if err != nil {
+				return err
 			}
-			s.incidentLock.Unlock()
+			incident.End = &timestamp
+			if err = s.DataAccess.Incidents().UpdateIncident(last.IncidentId, incident); err != nil {
+				return err
+			}
+
 		}
 	case ActionForget:
 		if !isUnknown {
@@ -838,29 +841,11 @@ func (a ActionType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(a.String())
 }
 
-type Incident struct {
-	Id       uint64
-	Start    time.Time
-	End      *time.Time
-	AlertKey expr.AlertKey
+func (s *Schedule) createIncident(ak models.AlertKey, start time.Time) (*models.Incident, error) {
+	return s.DataAccess.Incidents().CreateIncident(ak, start)
 }
 
-func (s *Schedule) createIncident(ak expr.AlertKey, start time.Time) *Incident {
-	s.incidentLock.Lock()
-	defer s.incidentLock.Unlock()
-	s.maxIncidentId++
-	id := s.maxIncidentId
-	incident := &Incident{
-		Id:       id,
-		Start:    start,
-		AlertKey: ak,
-	}
-
-	s.Incidents[id] = incident
-	return incident
-}
-
-type incidentList []*Incident
+type incidentList []*models.Incident
 
 func (i incidentList) Len() int { return len(i) }
 func (i incidentList) Less(a int, b int) bool {
@@ -871,93 +856,34 @@ func (i incidentList) Less(a int, b int) bool {
 }
 func (i incidentList) Swap(a int, b int) { i[a], i[b] = i[b], i[a] }
 
-func (s *Schedule) createHistoricIncidents() {
-	incidents := make(incidentList, 0)
-	indexes := make(map[*Incident]int)
-	s.Incidents = make(map[uint64]*Incident)
-	// 1. Create all incidents, but don't assign ids or link events yet.
-	for ak, state := range s.status {
-		var currentIncident *Incident
-		for i, ev := range state.History {
-			if currentIncident != nil {
-				if currentIncident.End == nil || ev.Time.Before(*currentIncident.End) {
-					// Continue open incident
-					continue
-				} else {
-					// End incident after end time
-					currentIncident = nil
-				}
-			}
-			if ev.Status == StNormal {
-				continue
-			}
-			// New incident
-			currentIncident = &Incident{AlertKey: ak, Start: ev.Time}
-			indexes[currentIncident] = i
-			incidents = append(incidents, currentIncident)
-			// Find end time for incident
-			for _, action := range state.Actions {
-				if action.Type == ActionClose && action.Time.After(ev.Time) {
-					end := action.Time
-					currentIncident.End = &end
-					break
-				}
-			}
-		}
-	}
-	// 2. Sort incidents
-	sort.Sort(incidents)
-	// 3. Assign ids and link events to appropriate ids
-	for _, incident := range incidents {
-		s.maxIncidentId++
-		incident.Id = s.maxIncidentId
-		// Find events and mark them
-		state := s.status[incident.AlertKey]
-		for idx := indexes[incident]; idx < len(state.History); idx++ {
-			ev := state.History[idx]
-			if incident.End == nil || ev.Time.Before(*incident.End) {
-				ev.IncidentId = incident.Id
-				state.History[idx] = ev
-			} else {
-				break
-			}
-		}
-		s.Incidents[incident.Id] = incident
-	}
-}
+func (s *Schedule) GetIncidents(alert string, from, to time.Time) ([]*models.Incident, error) {
 
-func (s *Schedule) GetIncidents(alert string, from, to time.Time) []*Incident {
-	s.incidentLock.Lock()
-	defer s.incidentLock.Unlock()
-	list := []*Incident{}
-	for _, i := range s.Incidents {
+	list, err := s.DataAccess.Incidents().GetIncidentsStartingInRange(from, to)
+	if err != nil {
+		return nil, err
+	}
+	incidents := []*models.Incident{}
+	for _, i := range list {
 		if alert != "" && i.AlertKey.Name() != alert {
 			continue
 		}
-		if i.Start.Before(from) || i.Start.After(to) {
-			continue
-		}
-		list = append(list, i)
+		incidents = append(incidents, i)
 	}
-	return list
+	return incidents, nil
 }
 
-func (s *Schedule) GetIncident(id uint64) (*Incident, error) {
-	s.incidentLock.Lock()
-	incident, ok := s.Incidents[id]
-	s.incidentLock.Unlock()
-	if !ok {
-		return nil, fmt.Errorf("incident %d not found", id)
+func (s *Schedule) GetIncident(id uint64) (*models.Incident, error) {
+	i, err := s.DataAccess.Incidents().GetIncident(id)
+	if err != nil {
+		return nil, err
 	}
-	return incident, nil
+	return i, nil
 }
 
-func (s *Schedule) GetIncidentEvents(id uint64) (*Incident, []Event, []Action, error) {
-	s.incidentLock.Lock()
-	incident, ok := s.Incidents[id]
-	s.incidentLock.Unlock()
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("incident %d not found", id)
+func (s *Schedule) GetIncidentEvents(id uint64) (*models.Incident, []Event, []Action, error) {
+	incident, err := s.DataAccess.Incidents().GetIncident(id)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	list := []Event{}
 	state := s.GetStatus(incident.AlertKey)
@@ -985,7 +911,7 @@ func (s *Schedule) GetIncidentEvents(id uint64) (*Incident, []Event, []Action, e
 type IncidentStatus struct {
 	IncidentID         uint64
 	Active             bool
-	AlertKey           expr.AlertKey
+	AlertKey           models.AlertKey
 	Status             Status
 	StatusTime         int64
 	Subject            string
