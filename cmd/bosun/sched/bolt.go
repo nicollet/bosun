@@ -415,7 +415,7 @@ func migrateIncidents(db *bolt.DB, data database.DataAccess) error {
 		return err
 	}
 	if migrated {
-		//return nil
+		return nil
 	}
 	slog.Info("migrating incidents")
 	incidents := map[uint64]*models.Incident{}
