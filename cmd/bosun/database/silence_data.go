@@ -31,7 +31,7 @@ type SilenceDataAccess interface {
 	AddSilence(*models.Silence) error
 	DeleteSilence(id string) error
 
-	ListSilences(perPage, page int) (map[string]*models.Silence, error)
+	ListSilences(endingAfter int64) (map[string]*models.Silence, error)
 }
 
 func (d *dataAccess) Silence() SilenceDataAccess {
@@ -117,23 +117,17 @@ func (d *dataAccess) DeleteSilence(id string) error {
 	return nil
 }
 
-func (d *dataAccess) ListSilences(perPage, page int) (map[string]*models.Silence, error) {
+func (d *dataAccess) ListSilences(endingAfter int64) (map[string]*models.Silence, error) {
 	defer collect.StartTimer("redis", opentsdb.TagSet{"op": "ListSilences"})()
 	conn := d.GetConnection()
 	defer conn.Close()
 
-	if page < 0 {
-		page = 0
-	}
-	if perPage < 1 {
-		perPage = 20
-	}
-	start := page * perPage
-	end := start + perPage - 1
-
-	ids, err := redis.Strings(conn.Do("ZREVRANGE", silenceIdx, start, end))
+	ids, err := redis.Strings(conn.Do("ZRANGEBYSCORE", silenceIdx, endingAfter, "+inf"))
 	if err != nil {
 		return nil, err
+	}
+	if len(ids) == 0 {
+		return map[string]*models.Silence{}, nil
 	}
 	silences, err := getSilences(ids, conn)
 	if err != nil {

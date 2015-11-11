@@ -65,8 +65,14 @@ func (s *Schedule) AddSilence(start, end time.Time, alert, tagList string, forge
 			return nil, err
 		}
 		si.Tags = tags
+		si.TagString = tags.Tags()
 	}
 	if confirm {
+		if edit != "" {
+			if err := s.DataAccess.Silence().DeleteSilence(edit); err != nil {
+				return nil, err
+			}
+		}
 		if err := s.DataAccess.Silence().DeleteSilence(si.ID()); err != nil {
 			return nil, err
 		}

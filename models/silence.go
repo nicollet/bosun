@@ -13,6 +13,7 @@ type Silence struct {
 	Start, End time.Time
 	Alert      string
 	Tags       opentsdb.TagSet
+	TagString  string
 	Forget     bool
 	User       string
 	Message    string

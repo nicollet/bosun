@@ -498,11 +498,11 @@ func (m MultiError) Error() string {
 }
 
 func SilenceGet(t miniprofiler.Timer, w http.ResponseWriter, r *http.Request) (interface{}, error) {
-	pageQ := r.FormValue("page")
-	perPageQ := r.FormValue("perPage")
-	page, _ := strconv.Atoi(pageQ)
-	perPage, _ := strconv.Atoi(perPageQ)
-	return schedule.DataAccess.Silence().ListSilences(page, perPage)
+	endingAfter := time.Now().UTC().Unix()
+	if t := r.FormValue("t"); t != "" {
+		endingAfter, _ = strconv.ParseInt(t, 10, 64)
+	}
+	return schedule.DataAccess.Silence().ListSilences(endingAfter)
 }
 
 var silenceLayouts = []string{
