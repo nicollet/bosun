@@ -140,10 +140,6 @@ func (s *Schedule) RestoreState() error {
 	if err := decode(db, dbNotifications, &notifications); err != nil {
 		slog.Errorln(dbNotifications, err)
 	}
-	//TODO: migrate silence
-	//	if err := decode(db, dbSilence, &s.Silence); err != nil {
-	//		slog.Errorln(dbSilence, err)
-	//	}
 
 	status := make(States)
 	if err := decode(db, dbStatus, &status); err != nil {
@@ -277,6 +273,9 @@ func migrateOldDataToRedis(db *bolt.DB, data database.DataAccess) error {
 		return err
 	}
 	if err := migrateIncidents(db, data); err != nil {
+		return err
+	}
+	if err := migrateSilence(db, data); err != nil {
 		return err
 	}
 	return nil
@@ -437,6 +436,29 @@ func migrateIncidents(db *bolt.DB, data database.DataAccess) error {
 		return err
 	}
 
+	return nil
+}
+
+func migrateSilence(db *bolt.DB, data database.DataAccess) error {
+	migrated, err := isMigrated(db, "silence")
+	if err != nil {
+		return err
+	}
+	if migrated {
+		return nil
+	}
+	slog.Info("migrating silence")
+	silence := map[string]*models.Silence{}
+	if err := decode(db, "silence", &silence); err != nil {
+		return err
+	}
+	for _, v := range silence {
+		v.TagString = v.Tags.Tags()
+		data.Silence().AddSilence(v)
+	}
+	if err = setMigrated(db, "silence"); err != nil {
+		return err
+	}
 	return nil
 }
 
