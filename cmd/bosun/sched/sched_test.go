@@ -58,6 +58,7 @@ type nopDataAccess struct {
 	database.SearchDataAccess
 	database.ErrorDataAccess
 	database.IncidentDataAccess
+	database.SilenceDataAccess
 	failingAlerts map[string]bool
 	idCounter     uint64
 	incidents     map[uint64]*models.Incident
@@ -67,6 +68,7 @@ func (n *nopDataAccess) Search() database.SearchDataAccess      { return n }
 func (n *nopDataAccess) Metadata() database.MetadataDataAccess  { return n }
 func (n *nopDataAccess) Errors() database.ErrorDataAccess       { return n }
 func (n *nopDataAccess) Incidents() database.IncidentDataAccess { return n }
+func (n *nopDataAccess) Silence() database.SilenceDataAccess    { return n }
 
 func (n *nopDataAccess) BackupLastInfos(map[string]map[string]*database.LastInfo) error { return nil }
 func (n *nopDataAccess) LoadLastInfos() (map[string]map[string]*database.LastInfo, error) {
@@ -95,6 +97,11 @@ func (n *nopDataAccess) UpdateIncident(id uint64, i *models.Incident) error {
 	n.incidents[id] = i
 	return nil
 }
+func (n *nopDataAccess) GetActiveSilences() ([]*models.Silence, error) {
+	return nil, nil
+}
+func (n *nopDataAccess) DeleteSilence(id string) error    { return nil }
+func (n *nopDataAccess) AddSilence(*models.Silence) error { return nil }
 
 func initSched(c *conf.Conf) (*Schedule, error) {
 	c.StateFile = ""
