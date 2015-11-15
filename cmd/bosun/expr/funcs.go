@@ -37,6 +37,9 @@ func tagQuery(args []parse.Node) (parse.Tags, error) {
 	for k := range q.Tags {
 		t[k] = struct{}{}
 	}
+	for k := range q.GroupByTags {
+		t[k] = struct{}{}
+	}
 	return t, nil
 }
 
@@ -588,8 +591,10 @@ func bandTSDB(e *State, T miniprofiler.Timer, query, duration, period string, nu
 		if err != nil {
 			return
 		}
-		if err = e.Search.Expand(q); err != nil {
-			return
+		if !e.tsdbContext.Version().FilterSupport() {
+			if err = e.Search.Expand(q); err != nil {
+				return
+			}
 		}
 		req := opentsdb.Request{
 			Queries: []*opentsdb.Query{q},
@@ -787,8 +792,10 @@ func Query(e *State, T miniprofiler.Timer, query, sduration, eduration string) (
 	if q == nil && err != nil {
 		return
 	}
-	if err = e.Search.Expand(q); err != nil {
-		return
+	if !e.tsdbContext.Version().FilterSupport() {
+		if err = e.Search.Expand(q); err != nil {
+			return
+		}
 	}
 	sd, err := opentsdb.ParseDuration(sduration)
 	if err != nil {

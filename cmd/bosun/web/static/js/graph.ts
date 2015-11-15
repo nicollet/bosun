@@ -12,12 +12,20 @@ class RateOptions {
 	resetValue: number;
 }
 
+class Filter {
+	type: string;
+	tagk: string;
+	filter:  string;
+	groupBy: boolean;
+}
+
 class Query {
 	aggregator: string;
 	metric: string;
 	rate: boolean;
 	rateOptions: RateOptions;
 	tags: TagSet;
+	filters: Filter[];
 	metric_tags: any;
 	downsample: string;
 	ds: string;
@@ -110,6 +118,11 @@ class Request {
 
 var graphRefresh: any;
 
+class Version {
+	Major: number;
+	Minor: number;
+}
+
 interface IGraphScope extends ng.IScope {
 	index: number;
 	url: string;
@@ -122,6 +135,7 @@ interface IGraphScope extends ng.IScope {
 	sorted_tagks: string[][];
 	query: string;
 	aggregators: string[];
+	version: any;
 	rate_options: string[];
 	dsaggregators: string[];
 	GetTagKByMetric: (index: number) => void;
@@ -153,9 +167,14 @@ interface IGraphScope extends ng.IScope {
 	normalize: boolean;
 }
 
-bosunControllers.controller('GraphCtrl', ['$scope', '$http', '$location', '$route', '$timeout', function($scope: IGraphScope, $http: ng.IHttpService, $location: ng.ILocationService, $route: ng.route.IRouteService, $timeout: ng.ITimeoutService) {
+bosunControllers.controller('GraphCtrl', ['$scope', '$http', '$location', '$route', '$timeout', 'version', function($scope: IGraphScope, $http: ng.IHttpService, $location: ng.ILocationService, $route: ng.route.IRouteService, $timeout: ng.ITimeoutService, $version: any) {
+	console.log($version);
+	$scope.version = $version.data;
 	$scope.aggregators = ["sum", "min", "max", "avg", "dev", "zimsum", "mimmin", "minmax"];
 	$scope.dsaggregators = ["", "sum", "min", "max", "avg", "dev", "zimsum", "mimmin", "minmax"];
+	if ($scope.version.Major >= 2 && $scope.version.Minor >= 2) {
+		console.log("Filter Support!");
+	}
 	$scope.rate_options = ["auto", "gauge", "counter", "rate"];
 	$scope.canAuto = {};
 	var search = $location.search();
@@ -283,7 +302,6 @@ bosunControllers.controller('GraphCtrl', ['$scope', '$http', '$location', '$rout
 		.error(function(error) {
 			$scope.error = 'Unable to fetch metrics: ' + error;
 		});
-
 	function GetTagVs(k: string, index: number) {
 		$http.get('/api/tagv/' + k + '/' + $scope.query_p[index].metric)
 			.success(function(data: string[]) {

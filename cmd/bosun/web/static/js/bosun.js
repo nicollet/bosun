@@ -39,7 +39,15 @@ bosunApp.config(['$routeProvider', '$locationProvider', '$httpProvider', functio
             when('/graph', {
             title: 'Graph',
             templateUrl: 'partials/graph.html',
-            controller: 'GraphCtrl'
+            controller: 'GraphCtrl',
+            resolve: {
+                'version': function ($http) {
+                    return $http({
+                        method: 'GET',
+                        url: '/api/opentsdb/version'
+                    });
+                }
+            }
         }).
             when('/host', {
             title: 'Host View',
@@ -1643,6 +1651,11 @@ var RateOptions = (function () {
     }
     return RateOptions;
 })();
+var Filter = (function () {
+    function Filter() {
+    }
+    return Filter;
+})();
 var Query = (function () {
     function Query(q) {
         this.aggregator = q && q.aggregator || 'sum';
@@ -1732,9 +1745,19 @@ var Request = (function () {
     return Request;
 })();
 var graphRefresh;
-bosunControllers.controller('GraphCtrl', ['$scope', '$http', '$location', '$route', '$timeout', function ($scope, $http, $location, $route, $timeout) {
+var Version = (function () {
+    function Version() {
+    }
+    return Version;
+})();
+bosunControllers.controller('GraphCtrl', ['$scope', '$http', '$location', '$route', '$timeout', 'version', function ($scope, $http, $location, $route, $timeout, $version) {
+        console.log($version);
+        $scope.version = $version.data;
         $scope.aggregators = ["sum", "min", "max", "avg", "dev", "zimsum", "mimmin", "minmax"];
         $scope.dsaggregators = ["", "sum", "min", "max", "avg", "dev", "zimsum", "mimmin", "minmax"];
+        if ($scope.version.Major >= 2 && $scope.version.Minor >= 2) {
+            console.log("Filter Support!");
+        }
         $scope.rate_options = ["auto", "gauge", "counter", "rate"];
         $scope.canAuto = {};
         var search = $location.search();

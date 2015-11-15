@@ -63,6 +63,7 @@ type Conf struct {
 	MinGroupSize     int
 
 	TSDBHost             string                    // OpenTSDB relay and query destination: ny-devtsdb04:4242
+	TSDBVersion          *opentsdb.Version         // If set to 2.2 , enable passthrough of wildcards and filters, and add support for groupby
 	GraphiteHost         string                    // Graphite query host: foo.bar.baz
 	GraphiteHeaders      []string                  // extra http headers when querying graphite.
 	LogstashElasticHosts expr.LogstashElasticHosts // CSV Elastic Hosts (All part of the same cluster) that stores logstash documents, i.e http://ny-elastic01:9200
@@ -82,7 +83,12 @@ func (c *Conf) TSDBContext() opentsdb.Context {
 	if c.TSDBHost == "" {
 		return nil
 	}
-	return opentsdb.NewLimitContext(c.TSDBHost, c.ResponseLimit)
+	version := c.TSDBVersion
+	// If the OpenTSDB version is not specified, we assume a min of 2.1
+	if version == nil {
+		version = &opentsdb.Version{2, 1}
+	}
+	return opentsdb.NewLimitContext(c.TSDBHost, c.ResponseLimit, *version)
 }
 
 // GraphiteContext returns a Graphite context. A nil context is returned if
@@ -409,6 +415,20 @@ func (c *Conf) loadGlobal(p *parse.PairNode) {
 			v += ":4242"
 		}
 		c.TSDBHost = v
+	case "tsdbVersion":
+		sp := strings.Split(v, ".")
+		if len(sp) != 2 {
+			c.errorf("tsdbVersion must be in number.number form")
+		}
+		major, err := strconv.ParseInt(sp[0], 10, 64)
+		if err != nil {
+			c.errorf("error pasing opentsdb major version number %v: %v", sp[0], err)
+		}
+		minor, err := strconv.ParseInt(sp[1], 10, 64)
+		if err != nil {
+			c.errorf("error pasing opentsdb minor version number %v: %v", sp[1], err)
+		}
+		c.TSDBVersion = &opentsdb.Version{major, minor}
 	case "graphiteHost":
 		c.GraphiteHost = v
 	case "graphiteHeader":
