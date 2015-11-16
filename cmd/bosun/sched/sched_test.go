@@ -62,6 +62,7 @@ type nopDataAccess struct {
 	failingAlerts map[string]bool
 	idCounter     uint64
 	incidents     map[uint64]*models.Incident
+	silences      map[string]*models.Silence
 }
 
 func (n *nopDataAccess) Search() database.SearchDataAccess      { return n }
@@ -98,10 +99,20 @@ func (n *nopDataAccess) UpdateIncident(id uint64, i *models.Incident) error {
 	return nil
 }
 func (n *nopDataAccess) GetActiveSilences() ([]*models.Silence, error) {
-	return nil, nil
+	r := make([]*models.Silence, 0, len(n.silences))
+	for _, s := range n.silences {
+		r = append(r, s)
+	}
+	return r, nil
 }
-func (n *nopDataAccess) DeleteSilence(id string) error    { return nil }
-func (n *nopDataAccess) AddSilence(*models.Silence) error { return nil }
+func (n *nopDataAccess) DeleteSilence(id string) error {
+	delete(n.silences, id)
+	return nil
+}
+func (n *nopDataAccess) AddSilence(s *models.Silence) error {
+	n.silences[s.ID()] = s
+	return nil
+}
 
 func initSched(c *conf.Conf) (*Schedule, error) {
 	c.StateFile = ""
@@ -109,6 +120,7 @@ func initSched(c *conf.Conf) (*Schedule, error) {
 	s.DataAccess = &nopDataAccess{
 		failingAlerts: map[string]bool{},
 		incidents:     map[uint64]*models.Incident{},
+		silences:      map[string]*models.Silence{},
 	}
 	err := s.Init(c)
 	return s, err
