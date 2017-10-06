@@ -77,7 +77,10 @@ var (
 
 func c_fastly_status(baseAddr string) (opentsdb.MultiDataPoint, error) {
 	var md opentsdb.MultiDataPoint
-	c := statusio.NewClient(baseAddr)
+	c, err := statusio.NewClient(baseAddr)
+	if err != nil {
+		return md, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), fastlyMaxDuration)
 	defer cancel()
 	summary, err := c.GetSummary(ctx)

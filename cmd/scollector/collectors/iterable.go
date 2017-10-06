@@ -78,7 +78,10 @@ func init() {
 // It uses status.io format (and library)
 func iterable(ctx context.Context, iter conf.Iterable, compKey IterComp) (opentsdb.MultiDataPoint, error) {
 	var md opentsdb.MultiDataPoint
-	c := statusio.NewClient(iter.StatusBaseAddr)
+	c, err := statusio.NewClient(iter.StatusBaseAddr)
+	if err != nil {
+		return md, err
+	}
 	summary, err := c.GetSummary(ctx)
 	if err != nil {
 		return md, err
